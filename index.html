@@ -169,11 +169,24 @@ function nameOf(eid,ev,shortForm){
   return (doubles&&shortForm)?e.s:e.l;
 }
 function tagOf(eid){const t=E[eid]&&E[eid].t;return t?`<span class="tag ${t==='B+I'?'bi':''}">${t}</span>`:""}
+let OVR={};   // name overrides typed in the sheet: OVR[matchId] = {a:"..", b:".."}
+function slotName(m,side){
+  const o=OVR[m.id]&&OVR[m.id][side];
+  if(o)return {txt:o,eid:null};
+  const s=m[side];
+  if(!s.startsWith("W:"))return {eid:s};
+  const id=s.slice(2), r=RES[id];
+  if(r&&r.st==="done"&&(r.w==="a"||r.w==="b"))return slotName(M[id],r.w);
+  return {tbd:id};
+}
+function slotText(m,side,shortForm){const n=slotName(m,side);return n.txt||(n.eid?nameOf(n.eid,m.ev,shortForm):"Winner "+n.tbd)}
 function slotHTML(m,side,shortForm){
-  const s=m[side], eid=entryOf(s), r=RES[m.id];
+  const n=slotName(m,side), r=RES[m.id];
   let cls="nm";
   if(r&&r.st==="done"&&r.w){cls+=r.w===side?" w":" l"}
-  if(!eid)return `<div class="${cls} tbd">Winner ${esc(s.slice(2))}</div>`;
+  if(n.tbd)return `<div class="${cls} tbd">Winner ${esc(n.tbd)}</div>`;
+  if(n.txt)return `<div class="${cls}">${esc(n.txt)}</div>`;
+  const eid=n.eid;
   let extra="";
   if(m.ev==="KS"&&E[eid].age)extra=` <span style="color:var(--mute);font-weight:500">(${E[eid].age})</span>`;
   return `<div class="${cls}">${esc(nameOf(eid,m.ev,shortForm))}${extra}${tagOf(eid)}</div>`;
@@ -219,7 +232,7 @@ function home(){
   const liveM=all.filter(m=>status(m)==="live");
   const next=all.filter(m=>status(m)==="up"&&mTime(m,"end")>now).slice(0,6);
   const done=all.filter(m=>status(m)==="done").length;
-  const champs=EVS.map(ev=>{const f=M[ev+"-F"];const r=RES[f.id];if(r&&r.st==="done"&&r.w){const e=entryOf(f[r.w]);return {ev,e}}return null}).filter(Boolean);
+  const champs=EVS.map(ev=>{const f=M[ev+"-F"];const r=RES[f.id];if(r&&r.st==="done"&&r.w){return {ev,name:slotText(f,r.w,false)}}return null}).filter(Boolean);
   return `<section class="hero">
    <span class="chip gold">1st EDITION</span>
    <h1>KEYA ATL <span>TABLE TENNIS</span><br>TOURNAMENT</h1>
@@ -227,7 +240,7 @@ function home(){
    <div class="meta"><span class="chip">🕘 Morning 9:00–12:00</span><span class="chip">🌙 Evening 5:00–9:00</span><span class="chip">🏓 2 tables</span><span class="chip">🏆 All finals Sun evening</span></div>
    <div class="stats"><div class="stat"><b>84</b><span>players</span></div><div class="stat"><b>6</b><span>categories</span></div><div class="stat"><b>${all.length}</b><span>matches</span></div><div class="stat"><b>${done}</b><span>completed</span></div></div>
   </section>
-  ${champs.length?`<h2 class="sec">Champions</h2><div class="cats">${champs.map(c=>`<div class="cat" style="--c:var(--${c.ev})"><span>${EVN[c.ev]}</span><b>🏆 ${esc(E[c.e].l)}</b></div>`).join("")}</div>`:""}
+  ${champs.length?`<h2 class="sec">Champions</h2><div class="cats">${champs.map(c=>`<div class="cat" style="--c:var(--${c.ev})"><span>${EVN[c.ev]}</span><b>🏆 ${esc(c.name)}</b></div>`).join("")}</div>`:""}
   ${liveM.length?`<h2 class="sec">Live now</h2>${liveM.map(matchCard).join("")}`:""}
   <h2 class="sec">${next.length?'Up next':'Tournament complete'}</h2>
   ${next.map((m,i)=>(i===0||next[i-1].day!==m.day?`<div class="note" style="margin:10px 0 4px">${m.day===1?'Saturday 28':'Sunday 29'} Nov</div>`:'')+matchCard(m)).join("")||'<div class="empty">All matches are done. Thank you, KEYA!</div>'}
@@ -242,7 +255,7 @@ function schedule(){
   if(st.ev!=="ALL")ms=ms.filter(m=>m.ev===st.ev);
   if(st.stat!=="all")ms=ms.filter(m=>status(m)===st.stat);
   const q=st.q.trim().toLowerCase();
-  if(q)ms=ms.filter(m=>(m.id+" "+[m.a,m.b].map(s=>{const e=entryOf(s);return e?E[e].l:s}).join(" ")).toLowerCase().includes(q));
+  if(q)ms=ms.filter(m=>(m.id+" "+["a","b"].map(sd=>slotText(m,sd,false)).join(" ")).toLowerCase().includes(q));
   const sess=[["Morning","9:00 AM – 12:00 PM"],["Evening","5:00 PM – 9:00 PM"]];
   return `<h2 class="sec">Schedule</h2>
   <div class="filters">${[1,2].map(d=>`<button class="f ${st.day===d?'on':''}" data-day="${d}">${d===1?'Sat 28 Nov':'Sun 29 Nov'}</button>`).join("")}
@@ -299,8 +312,8 @@ function drawBracket(){
       <div class="h"><b>${id}</b> · ${m.day===1?'Sat':'Sun'} ${m.sl} · T${m.table} · Bo${m.bo}${s==='live'?' · <b>LIVE</b>':''}</div>
       <div class="r">${slotHTML(m,"a",true)}${gamesHTML(m,"a")}</div><div class="r">${slotHTML(m,"b",true)}${gamesHTML(m,"b")}</div></div>`;
   }
-  if(isFinalRoot){const f=M[roots[0]];const r=RES[f.id];const e=r&&r.st==="done"&&r.w?entryOf(f[r.w]):null;
-    html+=`<div class="champ" style="left:${X(f.id)+BW+GAP}px;top:${TOP+pos[f.id]-22}px">🏆 ${e?esc(E[e].l):'Champion'}<small>${EVN[f.ev]}</small></div>`}
+  if(isFinalRoot){const f=M[roots[0]];const r=RES[f.id];const cn=r&&r.st==="done"&&r.w?slotText(f,r.w,false):null;
+    html+=`<div class="champ" style="left:${X(f.id)+BW+GAP}px;top:${TOP+pos[f.id]-22}px">🏆 ${cn?esc(cn):'Champion'}<small>${EVN[f.ev]}</small></div>`}
   html+=`</div>`;
   $("#bwrap").innerHTML=html;
 }
@@ -407,6 +420,7 @@ function toast(t){const el=$("#toast");el.textContent=t;el.style.display="block"
 $("#modal").onclick=e=>{if(e.target.id==="modal")$("#modal").classList.remove("on")};
 
 // ---------- live data (Google Sheet, polled) ----------
+const BASE={};DATA.matches.forEach(m=>BASE[m.id]={day:m.day,start:m.start,end:m.end,table:m.table,sl:m.sl,session:m.session});
 const SHEET_ID="1Q7WuSG2c_YSNoo9DX2zQ0j8S0HXsMeT33cAoS4MNdB8";
 const SHEET_URL="https://docs.google.com/spreadsheets/d/"+SHEET_ID+"/edit";
 let lastSync=null, feedErr=false, inflight=false;
@@ -421,7 +435,7 @@ function parseGames(t){
 function whoWon(m,t){
   t=t.trim().toLowerCase(); if(!t)return null;
   if(t==="a"||t==="1")return "a"; if(t==="b"||t==="2")return "b";
-  for(const side of ["a","b"]){const e=entryOf(m[side]);if(e){const L=(E[e].l+" "+E[e].s).toLowerCase();if(L.includes(t)||t.includes(E[e].l.toLowerCase().split(" ")[0]))return side}}
+  for(const side of ["a","b"]){const n=slotName(m,side);if(n.tbd)continue;const full=n.txt||E[n.eid].l;const L=(full+" "+(n.eid?E[n.eid].s:"")).toLowerCase();if(L.includes(t)||t.includes(full.toLowerCase().split(" ")[0]))return side}
   return null;
 }
 window.__sheetCb=function(resp){
@@ -429,12 +443,37 @@ window.__sheetCb=function(resp){
   try{
     if(!resp||resp.status==="error")throw 0;
     const rows=resp.table.rows||[];
-    const raw={};
-    rows.forEach(r=>{const c=r.c||[];const id=cellText(c[0]);if(!M[id])return;
-      raw[id]={st:cellText(c[8]).toUpperCase(),w:cellText(c[9]),g:cellText(c[10]),wo:/^y/i.test(cellText(c[11]))}});
+    const raw={};const ovr={};
+    // reset timings to the original plan, then apply any changes typed in the sheet
+    DATA.matches.forEach(m=>Object.assign(m,BASE[m.id]));
+    rows.forEach(r=>{const c=r.c||[];const id=cellText(c[0]);const m=M[id];if(!m)return;
+      raw[id]={st:cellText(c[8]).toUpperCase(),w:cellText(c[9]),g:cellText(c[10]),wo:/^y/i.test(cellText(c[11]))};
+      // names (columns G, H)
+      for(const [side,ci] of [["a",6],["b",7]]){
+        const t=cellText(c[ci]); if(!t||/^winner/i.test(t))continue;
+        const s0=m[side]; const canon=s0.startsWith("W:")?"":E[s0].l;
+        if(t.toLowerCase()!==canon.toLowerCase()){ovr[id]=ovr[id]||{};ovr[id][side]=t}
+      }
+      // day (B), time (C), table (D)
+      const dv=c[1]&&c[1].v, tv=c[2]&&c[2].v, tb=cellText(c[3]);
+      let day=null;
+      if(typeof dv==="string"&&/^Date\(/.test(dv)){const p=dv.match(/\d+/g).map(Number);day=p[2]===28?1:p[2]===29?2:null}
+      else{const t=cellText(c[1]).toLowerCase();if(/sat|28/.test(t))day=1;else if(/sun|29/.test(t))day=2}
+      let mins=null;
+      if(typeof tv==="string"&&/^Date\(/.test(tv)){const p=tv.match(/\d+/g).map(Number);if(p.length>=5)mins=p[3]*60+p[4]}
+      else if(typeof tv==="number"){mins=Math.round(tv*1440)}
+      else{const mt=cellText(c[2]).match(/(\d{1,2})[:.](\d{2})\s*([ap])?/i);if(mt){let h=+mt[1];const ap=(mt[3]||"").toLowerCase();if(ap==="p"&&h<12)h+=12;if(ap==="a"&&h===12)h=0;if(!ap&&h>=1&&h<=8)h+=12;mins=h*60+(+mt[2])}}
+      const tn=parseInt(tb.replace(/\D/g,""));
+      const len=m.end-m.start;
+      if(day)m.day=day;
+      if(mins!==null&&mins>0){m.start=mins;m.end=mins+len;const h=Math.floor(mins/60),mi=mins%60;m.sl=((h+11)%12+1)+":"+String(mi).padStart(2,"0")+(h<12?" AM":" PM");m.session=mins<13*60?"Morning":"Evening"}
+      if(tn===1||tn===2)m.table=tn;
+    });
+    OVR=ovr;
+    DATA.matches.sort((x,y)=>x.day-y.day||x.start-y.start||x.table-y.table);
     // resolve in schedule order so later rounds can see earlier winners
     const res={};RES=res;
-    DATA.matches.slice().sort((x,y)=>x.day-y.day||x.start-y.start).forEach(m=>{
+    DATA.matches.forEach(m=>{
       const r=raw[m.id];if(!r)return;
       const g=parseGames(r.g);
       let w=whoWon(m,r.w);
